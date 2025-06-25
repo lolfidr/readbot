@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"os"
 	tgClient "readbot/clients/telegram"
@@ -17,51 +16,35 @@ const (
 )
 
 func main() {
-	token := mustToken()
-	dsn := mustPostgresDSN()
+	// Получаем конфигурацию из переменных окружения
+	dsn := os.Getenv("PG_DSN")
+	if dsn == "" {
+		log.Fatal("PG_DSN environment variable is not set")
+	}
 
-	// Инициализируем хранилище (таблица создается внутри New)
+	botToken := os.Getenv("TG_BOT_TOKEN")
+	if botToken == "" {
+		log.Fatal("TG_BOT_TOKEN environment variable is not set")
+	}
+
+	// Инициализация хранилища
 	pgStorage, err := postgres.New(context.Background(), dsn)
 	if err != nil {
 		log.Fatal("Failed to connect to PostgreSQL:", err)
 	}
 	defer pgStorage.Close()
 
-	// Создаем клиент Telegram
-	tgClient := tgClient.New(tgBotHost, token)
-
-	// Создаем процессор событий
-	eventsProcessor := telegram.New(tgClient, pgStorage)
+	// Инициализация бота
+	eventsProcessor := telegram.New(
+		tgClient.New(tgBotHost, botToken),
+		pgStorage,
+	)
 
 	log.Print("service started")
 
+	// Запуск потребителя событий
 	consumer := event_consumer.New(eventsProcessor, eventsProcessor, batchSize)
-
 	if err := consumer.Start(); err != nil {
 		log.Fatal("service is stopped", err)
 	}
-}
-
-func mustToken() string {
-	token := flag.String(
-		"tg-bot-token",
-		"",
-		"token for access to telegram bot",
-	)
-
-	flag.Parse()
-
-	if *token == "" {
-		log.Fatal("token is not specified")
-	}
-
-	return *token
-}
-
-func mustPostgresDSN() string {
-	dsn := os.Getenv("PG_DSN")
-	if dsn == "" {
-		log.Fatal("PG_DSN environment variable is not set")
-	}
-	return dsn
 }
