@@ -8,6 +8,8 @@ import (
 	event_consumer "readbot/consumer/event-consumer"
 	"readbot/events/telegram"
 	"readbot/storage/postgres"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -16,35 +18,42 @@ const (
 )
 
 func main() {
-	// Получаем конфигурацию из переменных окружения
+	// Загрузка переменных окружения
+	if err := godotenv.Load(); err != nil {
+		log.Print("No .env file found")
+	}
+
+	// Получение конфигурации
 	dsn := os.Getenv("PG_DSN")
 	if dsn == "" {
-		log.Fatal("PG_DSN environment variable is not set")
+		log.Fatal("PG_DSN must be set in .env file")
 	}
 
 	botToken := os.Getenv("TG_BOT_TOKEN")
 	if botToken == "" {
-		log.Fatal("TG_BOT_TOKEN environment variable is not set")
+		log.Fatal("TG_BOT_TOKEN must be set in .env file")
 	}
 
 	// Инициализация хранилища
 	pgStorage, err := postgres.New(context.Background(), dsn)
 	if err != nil {
-		log.Fatal("Failed to connect to PostgreSQL:", err)
+		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 	}
 	defer pgStorage.Close()
 
-	// Инициализация бота
-	eventsProcessor := telegram.New(
-		tgClient.New(tgBotHost, botToken),
-		pgStorage,
-	)
+	log.Println("Successfully connected to PostgreSQL!")
 
-	log.Print("service started")
+	// Инициализация Telegram клиента
+	tgClient := tgClient.New(tgBotHost, botToken)
+
+	// Создание процессора событий
+	eventsProcessor := telegram.New(tgClient, pgStorage)
+
+	log.Print("Service started")
 
 	// Запуск потребителя событий
 	consumer := event_consumer.New(eventsProcessor, eventsProcessor, batchSize)
 	if err := consumer.Start(); err != nil {
-		log.Fatal("service is stopped", err)
+		log.Fatal("Service stopped:", err)
 	}
 }
